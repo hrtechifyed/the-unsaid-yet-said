@@ -34,6 +34,30 @@ def http_json(url, method="GET", payload=None, headers=None):
         return json.loads(response.read().decode("utf-8"))
 
 
+def github_headers():
+    return {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+
+
+def has_open_topic_gate():
+    if not GITHUB_TOKEN:
+        raise RuntimeError("GITHUB_TOKEN is missing")
+    issues = http_json(
+        f"https://api.github.com/repos/{REPO}/issues?state=open&per_page=100",
+        headers=github_headers()
+    )
+    for issue in issues:
+        if issue.get("pull_request"):
+            continue
+        if (issue.get("title") or "").startswith("Topic Proposals —"):
+            print(f"Open topic approval gate already exists: #{issue['number']}. Skipping new proposal batch.")
+            return True
+    return False
+
+
 def collect_signals():
     items = []
     seen = set()
@@ -167,8 +191,6 @@ def proposal_markdown(p, n):
 
 
 def create_issue(proposals):
-    if not GITHUB_TOKEN:
-        raise RuntimeError("GITHUB_TOKEN is missing")
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     body = [
         "# Topic Approval Gate",
@@ -195,15 +217,13 @@ def create_issue(proposals):
         f"https://api.github.com/repos/{REPO}/issues",
         "POST",
         payload,
-        {
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28"
-        }
+        github_headers()
     )
 
 
 def main():
+    if has_open_topic_gate():
+        return
     signals = collect_signals()
     if not signals:
         raise RuntimeError("No public signals were collected; refusing to invent topics without discovery input.")
