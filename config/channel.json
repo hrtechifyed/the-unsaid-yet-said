@@ -5,6 +5,12 @@
   "proposal_count": 5,
   "approval_gate": "mandatory",
   "advance_without_approval": false,
+  "discovery_claim_policy": {
+    "source_headlines_are_not_validated_facts": true,
+    "numerical_or_causal_claims_must_be_attributed_at_topic_stage": true,
+    "verification_required_before_scripting": true,
+    "preferred_wording": "A current source lead reports/suggests...; verify during research before treating as fact."
+  },
   "perspectives": [
     "employee",
     "manager",
