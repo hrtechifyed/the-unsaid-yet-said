@@ -12,9 +12,10 @@ permissions:
 jobs:
   handle-editor-command:
     if: >-
-      startsWith(github.event.comment.body, '/approve') ||
-      startsWith(github.event.comment.body, '/reject') ||
-      startsWith(github.event.comment.body, '/revise')
+      github.actor == github.repository_owner &&
+      (startsWith(github.event.comment.body, '/approve') ||
+       startsWith(github.event.comment.body, '/reject') ||
+       startsWith(github.event.comment.body, '/revise'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,6 +25,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Compile Gate 1 handler
+        run: python -m py_compile scripts/approval_handler.py
       - name: Enforce approval command
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
