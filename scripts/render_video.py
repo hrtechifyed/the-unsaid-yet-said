@@ -32,15 +32,14 @@ def main():
     (OUT/'narration.txt').write_text(script)
     (OUT/'title.txt').write_text(topic.replace("'",'’'))
 
-    # Edge TTS is used only as a zero-secret MVP narrator. The voice can be replaced later.
-    run('edge-tts','--voice','en-US-GuyNeural','--rate','-4%','--file',str(OUT/'narration.txt'),
+    # Zero-secret MVP narrator. Voice provider can be swapped without changing approval gates.
+    run('edge-tts','--voice','en-US-GuyNeural','--rate=-4%','--file',str(OUT/'narration.txt'),
         '--write-media',str(OUT/'narration.mp3'),'--write-subtitles',str(OUT/'captions.srt'))
 
     probe=subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',str(OUT/'narration.mp3')],text=True).strip()
     duration=float(probe)
     if duration < 20: raise RuntimeError('Narration duration is unexpectedly short; refusing to upload.')
 
-    # Minimal editorial visual system for the MVP: dark canvas, subtle motion, brand, topic and burned captions.
     vf=(
       "drawbox=x=0:y=0:w=iw:h=90:color=black@0.55:t=fill,"
       f"drawtext=fontfile={FONT}:text='THE UNSAID, YET SAID':fontcolor=white:fontsize=34:x=60:y=28,"
