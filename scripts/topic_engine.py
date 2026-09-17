@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import json, os, re, sys, urllib.parse, urllib.request, xml.etree.ElementTree as ET
+import json, os, re, sys, time, random, urllib.parse, urllib.request, urllib.error, xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
-REPO=os.environ.get('GITHUB_REPOSITORY','hrtechifyed/the-unsaid-yet-said'); GITHUB_TOKEN=os.environ.get('GITHUB_TOKEN',''); GEMINI_API_KEY=os.environ.get('GEMINI_API_KEY',''); GEMINI_MODEL=os.environ.get('GEMINI_MODEL','gemini-3.6-flash')
+REPO=os.environ.get('GITHUB_REPOSITORY','hrtechifyed/the-unsaid-yet-said'); GITHUB_TOKEN=os.environ.get('GITHUB_TOKEN',''); GEMINI_API_KEY=os.environ.get('GEMINI_API_KEY',''); GEMINI_MODEL=os.environ.get('GEMINI_MODEL','gemini-3.6-flash'); TRANSIENT_HTTP={429,500,502,503,504}
 NEWS_QUERIES=['workplace employee manager career promotion','employee engagement workplace culture leadership','hiring layoffs workforce workplace trends','salary performance review promotion career','AI workplace jobs employees managers','return to office hybrid work employees']
 def http_json(url,method='GET',payload=None,headers=None):
  data=None if payload is None else json.dumps(payload).encode(); req=urllib.request.Request(url,data=data,method=method); req.add_header('Content-Type','application/json')
@@ -25,10 +25,21 @@ def collect_signals():
     if title and key not in seen: seen.add(key); items.append({'title':title,'link':link,'published':pub})
   except Exception as exc: print(f'Warning: could not fetch {query}: {exc}',file=sys.stderr)
  return items[:60]
-def call_gemini(prompt):
+def call_gemini(prompt,max_attempts=5):
  if not GEMINI_API_KEY: raise RuntimeError('GEMINI_API_KEY missing')
- url=f'https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(GEMINI_MODEL)}:generateContent'; payload={'contents':[{'parts':[{'text':prompt}]}],'generationConfig':{'temperature':0.75,'responseMimeType':'application/json'}}
- result=http_json(url,'POST',payload,{'x-goog-api-key':GEMINI_API_KEY}); text=result['candidates'][0]['content']['parts'][0]['text']; return json.loads(re.sub(r'^```(?:json)?\s*|\s*```$','',text.strip(),flags=re.I|re.S))
+ url=f'https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(GEMINI_MODEL)}:generateContent'; data=json.dumps({'contents':[{'parts':[{'text':prompt}]}],'generationConfig':{'temperature':0.75,'responseMimeType':'application/json'}}).encode()
+ for attempt in range(1,max_attempts+1):
+  req=urllib.request.Request(url,data=data,method='POST'); req.add_header('Content-Type','application/json'); req.add_header('x-goog-api-key',GEMINI_API_KEY)
+  try:
+   with urllib.request.urlopen(req,timeout=90) as r: result=json.loads(r.read().decode())
+   text=result['candidates'][0]['content']['parts'][0]['text']; return json.loads(re.sub(r'^```(?:json)?\s*|\s*```$','',text.strip(),flags=re.I|re.S))
+  except urllib.error.HTTPError as e:
+   detail=e.read().decode(errors='replace')[:1000]
+   if e.code not in TRANSIENT_HTTP or attempt==max_attempts: raise RuntimeError(f'Gemini HTTP {e.code} after {attempt} attempt(s): {detail}') from e
+   delay=min(60,2**attempt+random.uniform(0,2)); print(f'Gemini transient HTTP {e.code}; retrying in {delay:.1f}s',file=sys.stderr); time.sleep(delay)
+  except (urllib.error.URLError,TimeoutError) as e:
+   if attempt==max_attempts: raise RuntimeError(f'Gemini network failure after {attempt} attempts: {e}') from e
+   delay=min(60,2**attempt+random.uniform(0,2)); print(f'Gemini network error; retrying in {delay:.1f}s',file=sys.stderr); time.sleep(delay)
 def build_prompt(signals):
  constitution=Path('EDITORIAL_CONSTITUTION.md').read_text(); config=json.loads(Path('config/channel.json').read_text()); signal_text='\n'.join(f"- {x['title']} | {x['published']} | {x['link']}" for x in signals)
  return f'''You are the Topic Editor for THE UNSAID, YET SAID, Powered by HRTechify.\n\nEDITORIAL CONSTITUTION:\n{constitution}\n\nCHANNEL CONFIG:\n{json.dumps(config,ensure_ascii=False,indent=2)}\n\nCURRENT PUBLIC SIGNALS:\n{signal_text}\n\nCreate exactly 5 distinct YouTube topic proposals. IMPORTANT: this is discovery, not research. Headlines are leads only. Do not present a headline, number, trend, motive, prevalence, or causal explanation as established fact. Frame the unsaid signal and interpretations as hypotheses/questions to investigate. Any quantitative statement belongs only in evidence_needed until verified from source content. Prefer timely topics with evergreen value. Vary the primary lens; at least one must focus on employees.\n\nFields: working_title, primary_pillar, primary_lens, unsaid_signal, what_is_observable, plausible_interpretations (array >=2), stakeholder_perspectives (employee, manager, peer_or_team, hr_or_people_system, leadership_or_organisation), why_now, viewer_value, opening_hook, evidence_needed (array), source_leads (only supplied URLs), risk_or_caveat, suggested_video_length_minutes.\n\nConstraints: decode signals, never mind-read; no deterministic conclusions; no unsupported layoff rumours or diagnosis; no generic listicles; distinguish observable behavior from hypotheses; explicitly preserve uncertainty. Return JSON object with key proposals containing exactly 5 objects.'''
