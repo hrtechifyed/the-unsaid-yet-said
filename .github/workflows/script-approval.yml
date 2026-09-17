@@ -10,8 +10,12 @@ permissions:
   actions: write
 
 jobs:
-  script-approval:
-    if: startsWith(github.event.issue.title, 'Research + Script — ')
+  handle-script-command:
+    if: >-
+      startsWith(github.event.issue.title, 'Research + Script — ') &&
+      (startsWith(github.event.comment.body, '/approve-script') ||
+       startsWith(github.event.comment.body, '/revise-script') ||
+       startsWith(github.event.comment.body, '/reject-script'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -21,7 +25,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Process script approval command
+      - name: Compile Gate 2 handler
+        run: python -m py_compile scripts/script_approval_handler.py
+      - name: Enforce script approval command
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
