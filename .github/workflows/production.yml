@@ -12,6 +12,8 @@ on:
         required: false
         default: false
         type: boolean
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -19,6 +21,11 @@ permissions:
 
 jobs:
   production-gate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.actor == github.repository_owner &&
+       startsWith(github.event.issue.title, 'Script Approved — ') &&
+       github.event.comment.body == '/run-production')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -43,14 +50,14 @@ jobs:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           YOUTUBE_EXPECTED_HANDLE: '@TheUnsaidYetSaid'
-          SOURCE_ISSUE_NUMBER: ${{ inputs.issue_number }}
-          PRODUCTION_DRY_RUN: ${{ inputs.dry_run }}
+          SOURCE_ISSUE_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_number || github.event.issue.number }}
+          PRODUCTION_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
         run: python scripts/production_engine.py
       - name: Preserve production package for Gate 3 review
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: production-package-${{ inputs.issue_number }}
+          name: production-package-${{ github.event_name == 'workflow_dispatch' && inputs.issue_number || github.event.issue.number }}
           path: /tmp/production/
           if-no-files-found: warn
           retention-days: 7
