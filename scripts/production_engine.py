@@ -43,18 +43,38 @@ def main():
     from youtube_upload import access_token, verify_channel, upload, set_thumbnail, get_video
     token=access_token(); channel=verify_channel(token)
     if DRY_RUN:
-        manifest={'topic':topic,'source_issue':source,'production_authorization_issue':issue.get('number'),'script_approved':True,'public_publish_authorized':False,'dry_run':True,'channel_id':channel['id'],'stages_completed':['voice','captions','branded_visuals','thumbnail','metadata','render','youtube_channel_verification']}
+        manifest={'topic':topic,'source_issue':source,'production_authorization_issue':issue.get('number'),'script_approved':True,'public_publish_authorized':False,'dry_run':True,'channel_id':channel['id'],'stages_completed':['voice','captions','branded_visuals','thumbnail_file','metadata','render','youtube_channel_verification']}
         (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)); print('PRODUCTION_DRY_RUN_OK'); return
 
     result=upload(token,str(OUT/'video.mp4'),metadata['title'],metadata['description'],'private'); video_id=result['id']
-    set_thumbnail(token,video_id,str(OUT/'thumbnail.jpg'))
+    # Print immediately so any later optional-stage failure can be recovered from the job log.
+    print('PRIVATE_UPLOAD_VIDEO_ID='+video_id,flush=True)
+
+    thumbnail_status='uploaded'
+    thumbnail_warning=''
+    try:
+        set_thumbnail(token,video_id,str(OUT/'thumbnail.jpg'))
+    except RuntimeError as exc:
+        # A custom-thumbnail permission/eligibility failure must never orphan an otherwise valid PRIVATE preview.
+        thumbnail_status='generated_not_uploaded'
+        thumbnail_warning=str(exc)
+        print('THUMBNAIL_WARNING: '+thumbnail_warning,file=sys.stderr,flush=True)
+
     current=get_video(token,video_id)
     privacy=current.get('status',{}).get('privacyStatus')
     if privacy!='private': raise RuntimeError(f'SAFETY STOP: uploaded preview privacy is {privacy}, expected private')
     watch=f'https://www.youtube.com/watch?v={video_id}'
-    manifest={'topic':topic,'source_issue':source,'production_authorization_issue':issue.get('number'),'script_approved':True,'public_publish_authorized':False,'youtube_video_id':video_id,'youtube_privacy':'private','channel_id':channel['id'],'stages_completed':['voice','captions','branded_visuals','thumbnail','metadata','render','private_youtube_upload','thumbnail_upload','privacy_verification']}
+    stages=['voice','captions','branded_visuals','thumbnail_file','metadata','render','private_youtube_upload','privacy_verification']
+    if thumbnail_status=='uploaded': stages.append('thumbnail_upload')
+    manifest={'topic':topic,'source_issue':source,'production_authorization_issue':issue.get('number'),'script_approved':True,'public_publish_authorized':False,'youtube_video_id':video_id,'youtube_privacy':'private','channel_id':channel['id'],'thumbnail_status':thumbnail_status,'thumbnail_warning':thumbnail_warning,'stages_completed':stages}
     (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2))
-    preview=gh(f'https://api.github.com/repos/{REPO}/issues','POST',{'title':f'Final Preview — {topic}','body':f'''# Final Production Gate\n\n**Status:** PRIVATE PREVIEW READY — PUBLIC PUBLISHING BLOCKED\n\n**Approved script source:** #{source}\n**Production authorization:** #{issue.get('number')}\n**YouTube video ID:** `{video_id}`\n**YouTube privacy:** PRIVATE\n**Private preview:** {watch}\n**Rendered duration:** {metadata['duration_seconds']} seconds\n**Narration words:** {metadata.get('narration_word_count','n/a')}\n\n## Production package\n- Narration generated\n- Captions generated and burned into the video\n- Branded 16:9 visual render generated\n- Thumbnail generated and uploaded\n- Metadata generated\n- Video uploaded to the verified TheUnsaidYetSaid channel as PRIVATE\n- Uploaded video privacy re-verified as PRIVATE\n\n## Gate 3\nNothing may be made public until you explicitly approve the finished package.\n\nCommands reserved for Gate 3:\n- `/approve-publish`\n- `/revise-production <instruction>`\n- `/reject-production <reason>`\n'''})
-    print('PRIVATE_UPLOAD_VIDEO_ID='+video_id); print('Opened final preview gate issue',preview['number'])
+
+    if thumbnail_status=='uploaded':
+        thumbnail_line='- Custom thumbnail generated and uploaded'
+    else:
+        thumbnail_line='- Custom thumbnail generated in the production artifact, but YouTube API upload was unavailable for this channel/account. The video remains PRIVATE and may show an auto-generated thumbnail until channel thumbnail eligibility/permission is enabled or the thumbnail is set manually.'
+
+    preview=gh(f'https://api.github.com/repos/{REPO}/issues','POST',{'title':f'Final Preview — {topic}','body':f'''# Final Production Gate\n\n**Status:** PRIVATE PREVIEW READY — PUBLIC PUBLISHING BLOCKED\n\n**Approved script source:** #{source}\n**Production authorization:** #{issue.get('number')}\n**YouTube video ID:** `{video_id}`\n**YouTube privacy:** PRIVATE\n**Private preview:** {watch}\n**Rendered duration:** {metadata['duration_seconds']} seconds\n**Narration words:** {metadata.get('narration_word_count','n/a')}\n**Custom thumbnail status:** {thumbnail_status}\n\n## Production package\n- Narration generated\n- Captions generated and burned into the video\n- Branded 16:9 visual render generated\n{thumbnail_line}\n- Metadata generated\n- Video uploaded to the verified TheUnsaidYetSaid channel as PRIVATE\n- Uploaded video privacy re-verified as PRIVATE\n\n## Gate 3\nNothing may be made public until you explicitly approve the finished package.\n\nCommands reserved for Gate 3:\n- `/approve-publish`\n- `/revise-production <instruction>`\n- `/reject-production <reason>`\n'''})
+    print('Opened final preview gate issue',preview['number'])
 
 if __name__=='__main__': main()
