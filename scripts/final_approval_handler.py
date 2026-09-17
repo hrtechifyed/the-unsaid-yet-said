@@ -7,6 +7,8 @@ REPO=os.environ.get('GITHUB_REPOSITORY','hrtechifyed/the-unsaid-yet-said')
 TOKEN=os.environ.get('GITHUB_TOKEN','')
 EVENT=os.environ.get('GITHUB_EVENT_PATH','')
 OWNER=os.environ.get('GITHUB_REPOSITORY_OWNER','')
+MIN_DURATION_SECONDS=360
+MIN_NARRATION_WORDS=900
 
 
 def gh(url,method='GET',payload=None):
@@ -25,6 +27,12 @@ def video_id_from(body):
     return m.group(1) if m else ''
 
 
+def quality_metrics(body):
+    d=re.search(r'\*\*Rendered duration:\*\*\s*([0-9.]+)\s*seconds',body,re.I)
+    w=re.search(r'\*\*Narration words:\*\*\s*(\d+)',body,re.I)
+    return (float(d.group(1)) if d else None, int(w.group(1)) if w else None)
+
+
 def main():
     event=json.loads(Path(EVENT).read_text()); actor=(event.get('comment',{}).get('user',{}).get('login') or '')
     if OWNER and actor.lower()!=OWNER.lower(): raise RuntimeError('SAFETY STOP: Gate 3 actor is not repository owner')
@@ -41,6 +49,13 @@ def main():
     privacy=video.get('status',{}).get('privacyStatus')
 
     if command=='/approve-publish':
+        duration,words=quality_metrics(body)
+        failures=[]
+        if duration is None or duration<MIN_DURATION_SECONDS: failures.append(f'duration {duration if duration is not None else "unknown"}s < {MIN_DURATION_SECONDS}s')
+        if words is None or words<MIN_NARRATION_WORDS: failures.append(f'narration words {words if words is not None else "unknown"} < {MIN_NARRATION_WORDS}')
+        if failures:
+            comment(n,'⛔ Publish blocked by production quality gate: '+ '; '.join(failures)+'. Request a production/script revision before publishing.')
+            raise RuntimeError('SAFETY STOP: final preview fails production quality gate: '+'; '.join(failures))
         if privacy!='private': raise RuntimeError(f'SAFETY STOP: expected PRIVATE preview before publishing, got {privacy}')
         set_privacy(token,video_id,'public'); after=get_video(token,video_id); final_privacy=after.get('status',{}).get('privacyStatus')
         if final_privacy!='public': raise RuntimeError(f'Publishing verification failed: privacy is {final_privacy}')
