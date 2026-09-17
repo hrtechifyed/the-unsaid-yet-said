@@ -5,6 +5,8 @@ from pathlib import Path
 
 OUT=Path('/tmp/production')
 FONT='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+MIN_SPOKEN_WORDS=900
+MIN_DURATION_SECONDS=360
 
 
 def run(*args, retries=1):
@@ -44,7 +46,8 @@ def main():
     topic=safe_title(a.topic)
     script=clean_script(Path(a.script).read_text())
     words=len(re.findall(r"\b[\w’'-]+\b",script))
-    if words < 80: raise RuntimeError(f'Approved narration is unexpectedly short ({words} words); refusing to render.')
+    if words < MIN_SPOKEN_WORDS:
+        raise RuntimeError(f'QUALITY GATE FAILED: approved narration has {words} spoken words; minimum is {MIN_SPOKEN_WORDS} for the 7–10 minute target. Refusing to render/upload.')
     (OUT/'narration.txt').write_text(script)
     (OUT/'title.txt').write_text(topic.replace("'",'’'))
 
@@ -53,7 +56,8 @@ def main():
 
     probe=subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',str(OUT/'narration.mp3')],text=True).strip()
     duration=float(probe)
-    if duration < 20: raise RuntimeError('Narration duration is unexpectedly short; refusing to upload.')
+    if duration < MIN_DURATION_SECONDS:
+        raise RuntimeError(f'QUALITY GATE FAILED: narration is {duration:.1f}s; minimum is {MIN_DURATION_SECONDS}s for the 7–10 minute target. Refusing to render/upload.')
 
     vf=(
       "drawbox=x=0:y=0:w=iw:h=90:color=black@0.55:t=fill,"
@@ -72,7 +76,7 @@ def main():
       f"drawtext=fontfile={FONT}:text='Powered by HRTechify':fontcolor=white@0.75:fontsize=24:x=54:y=h-70"
     )
     run('ffmpeg','-y','-f','lavfi','-i','color=c=0x171717:s=1280x720','-frames:v','1','-update','1','-vf',thumb,str(OUT/'thumbnail.jpg'))
-    metadata={'title':topic,'description':f'{topic}\n\nTHE UNSAID, YET SAID\nWhat isn’t said often says the most.\nPowered by HRTechify','duration_seconds':round(duration,1),'privacy':'private','narration_word_count':words}
+    metadata={'title':topic,'description':f'{topic}\n\nTHE UNSAID, YET SAID\nWhat isn’t said often says the most.\nPowered by HRTechify','duration_seconds':round(duration,1),'privacy':'private','narration_word_count':words,'target_duration_seconds':[420,600]}
     (OUT/'metadata.json').write_text(json.dumps(metadata,indent=2,ensure_ascii=False))
     print('Rendered',OUT/'video.mp4','duration',duration,'narration_words',words)
 
