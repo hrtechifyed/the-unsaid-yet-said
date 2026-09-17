@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, os, re, sys, urllib.parse, urllib.request, xml.etree.ElementTree as ET
+import json, os, re, sys, time, random, urllib.parse, urllib.request, urllib.error, xml.etree.ElementTree as ET
 from pathlib import Path
 
 REPO=os.environ.get('GITHUB_REPOSITORY','hrtechifyed/the-unsaid-yet-said')
@@ -8,6 +8,7 @@ GEMINI=os.environ.get('GEMINI_API_KEY','')
 MODEL=os.environ.get('GEMINI_MODEL','gemini-3.6-flash')
 EVENT=os.environ.get('GITHUB_EVENT_PATH','')
 SOURCE_ISSUE=os.environ.get('SOURCE_ISSUE_NUMBER','').strip()
+TRANSIENT_HTTP={429,500,502,503,504}
 
 def gh(url, method='GET', payload=None):
     data=None if payload is None else json.dumps(payload).encode()
@@ -15,13 +16,30 @@ def gh(url, method='GET', payload=None):
     for k,v in {'Content-Type':'application/json','Authorization':f'Bearer {TOKEN}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}.items(): req.add_header(k,v)
     with urllib.request.urlopen(req,timeout=60) as r: return json.loads(r.read().decode()) if r.status!=204 else {}
 
-def gemini(prompt):
+def gemini(prompt, max_attempts=5):
     if not GEMINI: raise RuntimeError('GEMINI_API_KEY missing')
     url=f"https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(MODEL)}:generateContent"
     payload={'contents':[{'parts':[{'text':prompt}]}],'generationConfig':{'temperature':0.45}}
-    req=urllib.request.Request(url,data=json.dumps(payload).encode(),method='POST'); req.add_header('Content-Type','application/json'); req.add_header('x-goog-api-key',GEMINI)
-    with urllib.request.urlopen(req,timeout=90) as r: out=json.loads(r.read().decode())
-    return out['candidates'][0]['content']['parts'][0]['text'].strip()
+    data=json.dumps(payload).encode()
+    for attempt in range(1,max_attempts+1):
+        req=urllib.request.Request(url,data=data,method='POST')
+        req.add_header('Content-Type','application/json'); req.add_header('x-goog-api-key',GEMINI)
+        try:
+            with urllib.request.urlopen(req,timeout=90) as r: out=json.loads(r.read().decode())
+            return out['candidates'][0]['content']['parts'][0]['text'].strip()
+        except urllib.error.HTTPError as e:
+            body=e.read().decode(errors='replace')[:1000]
+            if e.code not in TRANSIENT_HTTP or attempt==max_attempts:
+                raise RuntimeError(f'Gemini HTTP {e.code} after {attempt} attempt(s): {body}') from e
+            delay=min(60, 2**attempt + random.uniform(0,2))
+            print(f'Gemini transient HTTP {e.code}; retry {attempt}/{max_attempts} in {delay:.1f}s',file=sys.stderr)
+            time.sleep(delay)
+        except (urllib.error.URLError, TimeoutError) as e:
+            if attempt==max_attempts: raise RuntimeError(f'Gemini network failure after {attempt} attempts: {e}') from e
+            delay=min(60, 2**attempt + random.uniform(0,2))
+            print(f'Gemini network error; retry {attempt}/{max_attempts} in {delay:.1f}s',file=sys.stderr)
+            time.sleep(delay)
+    raise RuntimeError('Gemini request exhausted retries')
 
 def news(query, limit=10):
     q=urllib.parse.quote(query); url=f'https://news.google.com/rss/search?q={q}&hl=en-IN&gl=IN&ceid=IN:en'; rows=[]
