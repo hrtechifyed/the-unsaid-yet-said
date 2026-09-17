@@ -12,13 +12,37 @@ jobs:
   production-gate:
     if: startsWith(github.event.issue.title, 'Script Approved — ')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Open production package and mandatory final preview gate
+
+      - name: Install production dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          python -m pip install --upgrade pip
+          python -m pip install edge-tts
+
+      - name: Render and upload PRIVATE preview
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_EXPECTED_HANDLE: '@TheUnsaidYetSaid'
         run: python scripts/production_engine.py
+
+      - name: Preserve production package for Gate 3 review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-package-${{ github.event.issue.number }}
+          path: /tmp/production/
+          if-no-files-found: warn
+          retention-days: 7
