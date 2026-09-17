@@ -10,6 +10,7 @@ API='https://www.googleapis.com/youtube/v3'
 UPLOAD='https://www.googleapis.com/upload/youtube/v3/videos'
 THUMB_UPLOAD='https://www.googleapis.com/upload/youtube/v3/thumbnails/set'
 EXPECTED_HANDLE=os.environ.get('YOUTUBE_EXPECTED_HANDLE','@TheUnsaidYetSaid').lower()
+CHUNK_SIZE=8*1024*1024
 
 
 def _safe_google_error(exc):
@@ -27,14 +28,13 @@ def _safe_google_error(exc):
         return f'Google API HTTP {getattr(exc,"code","unknown")}: {getattr(exc,"reason",str(exc))}'
 
 
-def request_json(url, method='GET', data=None, headers=None):
+def request_json(url,method='GET',data=None,headers=None,timeout=180):
     body=None
     if data is not None: body=urlencode(data).encode() if isinstance(data,dict) else data
     req=Request(url,data=body,method=method,headers=headers or {})
     try:
-        with urlopen(req,timeout=180) as r:
-            raw=r.read().decode()
-            return json.loads(raw) if raw else {}
+        with urlopen(req,timeout=timeout) as r:
+            raw=r.read().decode(); return json.loads(raw) if raw else {}
     except HTTPError as exc:
         raise RuntimeError(_safe_google_error(exc)) from None
 
@@ -55,7 +55,7 @@ def verify_channel(token):
     items=out.get('items',[])
     if len(items)!=1: raise RuntimeError(f'Expected exactly one authorized channel, got {len(items)}')
     ch=items[0]; handle=(ch.get('snippet',{}).get('customUrl') or '').lower(); title=ch.get('snippet',{}).get('title','')
-    if EXPECTED_HANDLE and handle != EXPECTED_HANDLE: raise RuntimeError(f'SAFETY STOP: OAuth points to {title} ({handle}), expected {EXPECTED_HANDLE}')
+    if EXPECTED_HANDLE and handle!=EXPECTED_HANDLE: raise RuntimeError(f'SAFETY STOP: OAuth points to {title} ({handle}), expected {EXPECTED_HANDLE}')
     print(f'Authorized channel verified: {title} ({handle}) / {ch["id"]}'); return ch
 
 
@@ -66,15 +66,51 @@ def get_video(token,video_id):
     return items[0]
 
 
-def upload(token,path,title,description,privacy):
+def _start_resumable(token,path,title,description,privacy):
+    size=Path(path).stat().st_size
     metadata={'snippet':{'title':title,'description':description,'categoryId':'22'},'status':{'privacyStatus':privacy,'selfDeclaredMadeForKids':False}}
-    boundary='unsaid_boundary_9f3a'; meta=json.dumps(metadata).encode(); video=Path(path).read_bytes()
-    body=(f'--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'.encode()+meta+
-          f'\r\n--{boundary}\r\nContent-Type: video/mp4\r\n\r\n'.encode()+video+
-          f'\r\n--{boundary}--\r\n'.encode())
-    url=UPLOAD+'?'+urlencode({'part':'snippet,status','uploadType':'multipart','notifySubscribers':'false'})
-    try: return request_json(url,'POST',body,{'Authorization':'Bearer '+token,'Content-Type':f'multipart/related; boundary={boundary}'})
-    except RuntimeError as exc: raise RuntimeError('VIDEO UPLOAD FAILED: '+str(exc)) from None
+    url=UPLOAD+'?'+urlencode({'part':'snippet,status','uploadType':'resumable','notifySubscribers':'false'})
+    req=Request(url,data=json.dumps(metadata).encode(),method='POST',headers={
+        'Authorization':'Bearer '+token,'Content-Type':'application/json; charset=UTF-8',
+        'X-Upload-Content-Type':'video/mp4','X-Upload-Content-Length':str(size)
+    })
+    try:
+        with urlopen(req,timeout=180) as r:
+            location=r.headers.get('Location')
+            if not location: raise RuntimeError('YouTube resumable upload did not return an upload URL')
+            return location,size
+    except HTTPError as exc:
+        raise RuntimeError('VIDEO UPLOAD INIT FAILED: '+_safe_google_error(exc)) from None
+
+
+def upload(token,path,title,description,privacy):
+    location,total=_start_resumable(token,path,title,description,privacy)
+    offset=0; final=None
+    with open(path,'rb') as f:
+        while offset<total:
+            chunk=f.read(min(CHUNK_SIZE,total-offset))
+            if not chunk: break
+            end=offset+len(chunk)-1
+            req=Request(location,data=chunk,method='PUT',headers={
+                'Authorization':'Bearer '+token,'Content-Type':'video/mp4','Content-Length':str(len(chunk)),
+                'Content-Range':f'bytes {offset}-{end}/{total}'
+            })
+            try:
+                with urlopen(req,timeout=300) as r:
+                    raw=r.read().decode(); final=json.loads(raw) if raw else None
+                    offset=end+1
+            except HTTPError as exc:
+                # 308 Resume Incomplete is expected between chunks.
+                if exc.code==308:
+                    rng=exc.headers.get('Range','')
+                    if rng and '-' in rng:
+                        offset=int(rng.rsplit('-',1)[1])+1; f.seek(offset)
+                    else:
+                        offset=end+1
+                    continue
+                raise RuntimeError('VIDEO UPLOAD FAILED: '+_safe_google_error(exc)) from None
+    if not final or 'id' not in final: raise RuntimeError('VIDEO UPLOAD FAILED: resumable session completed without a video resource')
+    return final
 
 
 def set_thumbnail(token,video_id,path):
