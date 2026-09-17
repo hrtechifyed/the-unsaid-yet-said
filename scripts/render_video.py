@@ -26,7 +26,8 @@ def clean_script(text):
     # Remove visual/on-screen/stage directions and timecodes.
     text=re.sub(r'(?im)^\s*(?:\*\*)?\[(?:VISUAL|ON[- ]SCREEN|B-ROLL|SFX|MUSIC)[^\]]*\](?:\*\*)?\s*$',' ',text)
     text=re.sub(r'(?im)^\s*(?:#{1,6}\s*)?\[?\d{1,2}:\d{2}(?:\s*[–—-]\s*\d{1,2}:\d{2})?\]?[^\n]*$',' ',text)
-    # Remove script metadata lines and section headings so TTS does not narrate production labels.
+    # Remove speaker labels and script metadata so TTS never says "Narrator" or production labels aloud.
+    text=re.sub(r'(?im)^\s*(?:\*\*)?(?:Narrator|Voiceover|VO|Host|Presenter)\s*:\s*(?:\*\*)?\s*$', ' ', text)
     text=re.sub(r'(?im)^\s*(?:\*\*)?(?:Title|Channel|Estimated Run Time|Estimated Runtime|Run Time|Runtime)\s*:\s*.*$',' ',text)
     text=re.sub(r'(?im)^\s*#{1,6}\s+.*$',' ',text)
     # Remove source markers and markdown formatting while preserving spoken words.
