@@ -21,16 +21,12 @@ def run(*args, retries=1):
 
 
 def clean_script(text):
-    # Remove fenced blocks: these are generally visual diagrams or production notes, not narration.
     text=re.sub(r'```.*?```',' ',text,flags=re.S)
-    # Remove visual/on-screen/stage directions and timecodes.
     text=re.sub(r'(?im)^\s*(?:\*\*)?\[(?:VISUAL|ON[- ]SCREEN|B-ROLL|SFX|MUSIC)[^\]]*\](?:\*\*)?\s*$',' ',text)
     text=re.sub(r'(?im)^\s*(?:#{1,6}\s*)?\[?\d{1,2}:\d{2}(?:\s*[–—-]\s*\d{1,2}:\d{2})?\]?[^\n]*$',' ',text)
-    # Remove speaker labels and script metadata so TTS never says "Narrator" or production labels aloud.
     text=re.sub(r'(?im)^\s*(?:\*\*)?(?:Narrator|Voiceover|VO|Host|Presenter)\s*:\s*(?:\*\*)?\s*$', ' ', text)
     text=re.sub(r'(?im)^\s*(?:\*\*)?(?:Title|Channel|Estimated Run Time|Estimated Runtime|Run Time|Runtime)\s*:\s*.*$',' ',text)
     text=re.sub(r'(?im)^\s*#{1,6}\s+.*$',' ',text)
-    # Remove source markers and markdown formatting while preserving spoken words.
     text=re.sub(r'\[S\d+(?:\s*[,;-]\s*S?\d+)*\]','',text)
     text=re.sub(r'[*_`#>]','',text)
     text=re.sub(r'(?m)^\s*[-+•]\s+','',text)
@@ -75,7 +71,7 @@ def main():
       f"drawtext=fontfile={FONT}:text='THE UNSAID\\, YET SAID':fontcolor=white:fontsize=34:x=54:y=48,"
       f"drawtext=fontfile={FONT}:text='Powered by HRTechify':fontcolor=white@0.75:fontsize=24:x=54:y=h-70"
     )
-    run('ffmpeg','-y','-f','lavfi','-i','color=c=0x171717:s=1280x720','-frames:v','1','-vf',thumb,str(OUT/'thumbnail.jpg'))
+    run('ffmpeg','-y','-f','lavfi','-i','color=c=0x171717:s=1280x720','-frames:v','1','-update','1','-vf',thumb,str(OUT/'thumbnail.jpg'))
     metadata={'title':topic,'description':f'{topic}\n\nTHE UNSAID, YET SAID\nWhat isn’t said often says the most.\nPowered by HRTechify','duration_seconds':round(duration,1),'privacy':'private','narration_word_count':words}
     (OUT/'metadata.json').write_text(json.dumps(metadata,indent=2,ensure_ascii=False))
     print('Rendered',OUT/'video.mp4','duration',duration,'narration_words',words)
