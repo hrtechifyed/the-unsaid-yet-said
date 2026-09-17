@@ -1,0 +1,37 @@
+name: Final Production Approval Gate
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  handle-final-command:
+    if: >-
+      github.actor == github.repository_owner &&
+      startsWith(github.event.issue.title, 'Final Preview — ') &&
+      (github.event.comment.body == '/approve-publish' ||
+       startsWith(github.event.comment.body, '/revise-production ') ||
+       startsWith(github.event.comment.body, '/reject-production'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Gate 3 handler
+        run: python -m py_compile scripts/final_approval_handler.py scripts/youtube_upload.py
+      - name: Enforce final production decision
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_EXPECTED_HANDLE: '@TheUnsaidYetSaid'
+        run: python scripts/final_approval_handler.py
