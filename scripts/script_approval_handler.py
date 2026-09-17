@@ -23,17 +23,23 @@ def gemini(prompt,max_attempts=5):
    delay=min(60,2**attempt+random.uniform(0,2)); print(f'Gemini network error; retry {attempt}/{max_attempts} in {delay:.1f}s',file=sys.stderr); time.sleep(delay)
  raise RuntimeError('Gemini request exhausted retries')
 def comment(n,text): gh(f'https://api.github.com/repos/{REPO}/issues/{n}/comments','POST',{'body':text})
-def dispatch_production(n): gh(f'https://api.github.com/repos/{REPO}/actions/workflows/production.yml/dispatches','POST',{'ref':'main','inputs':{'issue_number':str(n)}})
+def dispatch_production(n): gh(f'https://api.github.com/repos/{REPO}/actions/workflows/production.yml/dispatches','POST',{'ref':'main','inputs':{'issue_number':str(n),'dry_run':'false'}})
+def validate_gate2(body):
+ required=['# Research + Script Gate','## Claim-evidence ledger','## Source ledger','## Draft script','## Editor checklist','## Mandatory Gate 2']
+ missing=[x for x in required if x not in body]
+ if missing: raise RuntimeError('SAFETY STOP: research/script issue is missing evidence-gate section(s): '+', '.join(missing))
+ markers=set(re.findall(r'\[S\d+\]',body))
+ if len(markers)<2: raise RuntimeError('SAFETY STOP: research/script issue does not contain at least two source markers')
 def main():
  event=json.loads(Path(EVENT).read_text()); issue=event.get('issue',{}); n=issue.get('number'); title=issue.get('title',''); body=issue.get('body') or ''
  if not title.startswith('Research + Script — '): print('Ignoring non-research issue'); return
  text=(event.get('comment',{}).get('body') or '').strip()
  if text=='/approve-script':
-  topic=title.replace('Research + Script — ','',1); created=gh(f'https://api.github.com/repos/{REPO}/issues','POST',{'title':f'Script Approved — {topic}','body':f'''# Production Authorization\n\n**Status:** SCRIPT APPROVED.\n\n**Source:** #{n}\n\nApproval authorizes the next stage to generate voice, visuals, captions, thumbnail and metadata. It does **not** authorize public publishing until the final preview gate is approved.\n'''})
+  validate_gate2(body); topic=title.replace('Research + Script — ','',1); created=gh(f'https://api.github.com/repos/{REPO}/issues','POST',{'title':f'Script Approved — {topic}','body':f'''# Production Authorization\n\n**Status:** SCRIPT APPROVED.\n\n**Source:** #{n}\n\nApproval authorizes the next stage to generate voice, visuals, captions, thumbnail and metadata. It does **not** authorize public publishing until the final preview gate is approved.\n'''})
   dispatch_production(created['number']); comment(n,f"✅ Script approved. Production authorization recorded in #{created['number']} and production dispatched. Public publishing remains blocked behind the final preview gate."); gh(f'https://api.github.com/repos/{REPO}/issues/{n}','PATCH',{'state':'closed','state_reason':'completed'}); return
  m=re.match(r'^/revise-script\s+(.+)$',text,flags=re.S|re.I)
  if m:
-  instruction=m.group(1).strip(); prompt=f'''Revise the following research dossier + YouTube script for THE UNSAID, YET SAID.\n\nEDITOR INSTRUCTION:\n{instruction}\n\nCURRENT DOCUMENT:\n{body}\n\nPreserve the source ledger and never invent new sources, data, quotes or factual claims. Preserve calibrated language and multiple plausible interpretations. Update the script and any affected checklist sections. Keep the Mandatory Gate 2 instructions at the end. Return complete revised Markdown only.'''; revised=re.sub(r'^```(?:markdown)?\s*|\s*```$','',gemini(prompt),flags=re.I|re.S).strip(); gh(f'https://api.github.com/repos/{REPO}/issues/{n}','PATCH',{'body':revised}); comment(n,f'✏️ Revised using your instruction: _{instruction}_\n\nThe script still requires `/approve-script`.'); return
+  instruction=m.group(1).strip(); prompt=f'''Revise the following research dossier + YouTube script for THE UNSAID, YET SAID.\n\nEDITOR INSTRUCTION:\n{instruction}\n\nCURRENT DOCUMENT:\n{body}\n\nPreserve the claim-evidence ledger and source ledger. Never invent new sources, data, quotes or factual claims. Preserve source markers on every factual/research-derived claim, calibrated language and multiple plausible interpretations. Do not weaken the Mandatory Gate 2 safeguards. Return complete revised Markdown only.'''; revised=re.sub(r'^```(?:markdown)?\s*|\s*```$','',gemini(prompt),flags=re.I|re.S).strip(); validate_gate2(revised); gh(f'https://api.github.com/repos/{REPO}/issues/{n}','PATCH',{'body':revised}); comment(n,f'✏️ Revised using your instruction: _{instruction}_\n\nThe script still requires `/approve-script`.'); return
  m=re.match(r'^/reject-script(?:\s+(.+))?$',text,flags=re.S|re.I)
  if m:
   reason=(m.group(1) or 'No reason supplied.').strip(); comment(n,f'❌ Script rejected. It will not advance.\n\n**Reason:** {reason}'); gh(f'https://api.github.com/repos/{REPO}/issues/{n}','PATCH',{'state':'closed','state_reason':'not_planned'}); return
