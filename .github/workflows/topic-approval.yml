@@ -17,7 +17,7 @@ jobs:
        startsWith(github.event.comment.body, '/reject') ||
        startsWith(github.event.comment.body, '/revise'))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,5 +31,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.6-flash' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_TOPIC_MODEL || 'gemini-2.5-flash' }}
         run: python scripts/approval_handler.py
