@@ -31,7 +31,8 @@ def news(query,limit=10):
     url=f'https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=en-IN&gl=IN&ceid=IN:en'; rows=[]
     try:
         with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':UA}),timeout=20) as r: root=ET.fromstring(r.read())
-        for item in root.findall('.//item')[:limit]: rows.append({'title':(item.findtext('title') or '').strip(),'url':(item.findtext('link') or '').strip(),'published':(item.findtext('pubDate') or '').strip()})
+        for item in root.findall('.//item')[:limit]:
+            src=item.find('source'); rows.append({'title':(item.findtext('title') or '').strip(),'url':(item.findtext('link') or '').strip(),'published':(item.findtext('pubDate') or '').strip(),'publisher':(src.text or '').strip() if src is not None else ''})
     except Exception as e: print('news warning',e,file=sys.stderr)
     return rows
 
@@ -39,16 +40,45 @@ def clean_html(raw):
     raw=re.sub(r'(?is)<(script|style|noscript|svg|nav|footer|header|form).*?>.*?</\1>',' ',raw); raw=re.sub(r'(?is)<!--.*?-->',' ',raw); raw=re.sub(r'(?s)<[^>]+>',' ',raw)
     return re.sub(r'\s+',' ',html.unescape(raw)).strip()
 
-def fetch_evidence(source):
+def external_url(url):
+    host=(urllib.parse.urlparse(url).hostname or '').lower()
+    return bool(host) and not any(x in host for x in ('google.com','googleusercontent.com','gstatic.com','duckduckgo.com'))
+
+def discover_publisher_url(source):
+    if external_url(source.get('url','')): return source['url']
+    title=source.get('title',''); publisher=source.get('publisher','')
+    # Google News titles commonly end in " - Publisher"; remove it before navigation search.
+    if publisher and title.lower().endswith((' - '+publisher).lower()): title=title[:-(len(publisher)+3)].strip()
+    query=f'"{title}" {publisher}'.strip(); search='https://html.duckduckgo.com/html/?q='+urllib.parse.quote(query)
     try:
-        req=urllib.request.Request(source['url'],headers={'User-Agent':UA,'Accept':'text/html,application/xhtml+xml'})
+        req=urllib.request.Request(search,headers={'User-Agent':UA,'Accept':'text/html'})
+        with urllib.request.urlopen(req,timeout=20) as r: raw=r.read(600000).decode('utf-8',errors='replace')
+        hrefs=re.findall(r'href=["\']([^"\']+)["\']',raw,re.I)
+        for href in hrefs:
+            href=html.unescape(href)
+            if href.startswith('//'): href='https:'+href
+            parsed=urllib.parse.urlparse(href)
+            qs=urllib.parse.parse_qs(parsed.query)
+            if 'uddg' in qs: href=urllib.parse.unquote(qs['uddg'][0])
+            if external_url(href): return href
+    except Exception as e: print(f"navigation search warning for {title}: {e}",file=sys.stderr)
+    return None
+
+def fetch_evidence(source):
+    target=discover_publisher_url(source)
+    if not target: return None
+    try:
+        req=urllib.request.Request(target,headers={'User-Agent':UA,'Accept':'text/html,application/xhtml+xml'})
         with urllib.request.urlopen(req,timeout=25) as r: final=r.geturl(); ctype=(r.headers.get('Content-Type') or '').lower(); raw=r.read(1500000)
-        host=(urllib.parse.urlparse(final).hostname or '').lower()
-        if 'html' not in ctype or host.endswith('news.google.com'): return None
+        if 'html' not in ctype or not external_url(final): return None
         text=clean_html(raw.decode('utf-8',errors='replace'))
         if len(text)<700: return None
+        # Require a meaningful overlap with the discovered headline so unrelated search results cannot enter evidence.
+        headline_words={w.lower() for w in re.findall(r'[A-Za-z]{5,}',source.get('title','')) if w.lower() not in {'about','their','there','which','after','before','from','with'}}
+        page_words=set(re.findall(r'[A-Za-z]{5,}',text.lower()))
+        if headline_words and len(headline_words & page_words) < min(3,len(headline_words)): return None
         return {**source,'resolved_url':final,'evidence_text':text[:9000]}
-    except Exception as e: print(f"source fetch warning {source.get('url')}: {e}",file=sys.stderr); return None
+    except Exception as e: print(f"source fetch warning {target}: {e}",file=sys.stderr); return None
 
 def main():
     issue=gh(f'https://api.github.com/repos/{REPO}/issues/{int(SOURCE_ISSUE)}') if SOURCE_ISSUE else json.loads(Path(EVENT).read_text()).get('issue',{})
@@ -56,69 +86,24 @@ def main():
     if not title.startswith('Approved Topic — '): raise RuntimeError('Source is not an Approved Topic issue')
     body=issue.get('body') or ''; topic=title.replace('Approved Topic — ','',1).strip(); leads=news(topic,12)+news(topic+' workplace research',8); seen=set(); sources=[]
     for s in leads:
-        if s['url'] and s['url'] not in seen: seen.add(s['url']); sources.append(s)
+        key=s.get('title','').lower()
+        if key and key not in seen: seen.add(key); sources.append(s)
     for u in re.findall(r'https?://[^)\s]+',body):
-        if u not in seen: seen.add(u); sources.append({'title':'Source carried from approved proposal','url':u,'published':''})
+        if u not in seen: seen.add(u); sources.append({'title':'Source carried from approved proposal','url':u,'published':'','publisher':''})
     verified=[]
     for s in sources[:20]:
         ev=fetch_evidence(s)
-        if ev: verified.append(ev)
+        if ev: verified.append(ev); print(f"verified source: {ev['resolved_url']}")
         if len(verified)>=8: break
     if len(verified)<2: raise RuntimeError(f'RESEARCH QUALITY GATE FAILED: only {len(verified)} publisher source(s) yielded readable evidence; minimum is 2. No script was generated.')
     packets=[]
     for i,s in enumerate(verified,1): packets.append(f"S{i}\nTITLE: {s['title']}\nDATE: {s['published']}\nURL: {s['resolved_url']}\nFETCHED EVIDENCE:\n{s['evidence_text']}")
     evidence='\n\n--- SOURCE PACKET ---\n'.join(packets); constitution=Path('EDITORIAL_CONSTITUTION.md').read_text()
-    prompt=f'''You are the Research Editor and Script Writer for THE UNSAID, YET SAID — Powered by HRTechify.
-
-APPROVED TOPIC RECORD (contains hypotheses and discovery leads, NOT facts):
-{body}
-
-EDITORIAL CONSTITUTION:
-{constitution}
-
-VERIFIED SOURCE PACKETS (actual fetched publisher page text):
-{evidence}
-
-NON-NEGOTIABLE EVIDENCE RULES:
-1. Treat every claim in APPROVED TOPIC RECORD as an unverified hypothesis unless independently supported in FETCHED EVIDENCE.
-2. A headline alone is not evidence. Use only facts explicitly present in FETCHED EVIDENCE.
-3. Every factual assertion, number, percentage, salary figure, trend/study/historical/causal claim in the dossier AND script must end with [S#].
-4. Never manufacture precision or generalize an anecdote, opinion, example or single-company observation.
-5. Clearly label interpretations as interpretations. Do not mind-read employees, managers or HR.
-6. Unsupported points belong under What we cannot claim yet and must be omitted as facts from narration.
-7. For surveys, state population/sample/geography/date when the source provides them. Do not imply global representativeness.
-8. Use resolved publisher URLs in Source ledger.
-
-Use exactly:
-# Research + Script Gate
-## Approved topic
-## Core thesis
-## Claim-evidence ledger
-Each factual claim: **Claim:** ... | **Evidence:** concise paraphrase of exactly what source establishes | **Source:** [S#] | **Confidence:** High/Medium. Low-confidence claims are excluded.
-## What we can responsibly say
-## What we cannot claim yet
-## Competing interpretations
-## Employee perspective
-## Manager perspective
-## Peer/team perspective
-## HR/people-system perspective
-## Organisation/leadership perspective
-## Source ledger
-## Draft script
-Natural 7–10 minute script: recognisable moment → tension → multiple plausible interpretations → signals that strengthen/weaken each → practical observe/ask/verify/act framework. Every research-derived factual claim carries [S#]. No unsupported statistics or pseudo-precision.
-## Editor checklist
-- Claims needing additional verification
-- Evidence limitations
-- Tone/clickbait risks
-- Suggested title
-- Thumbnail text (max 5 words)
-Return Markdown only.'''
+    prompt=f'''You are the Research Editor and Script Writer for THE UNSAID, YET SAID — Powered by HRTechify.\n\nAPPROVED TOPIC RECORD (contains hypotheses and discovery leads, NOT facts):\n{body}\n\nEDITORIAL CONSTITUTION:\n{constitution}\n\nVERIFIED SOURCE PACKETS (actual fetched publisher page text):\n{evidence}\n\nNON-NEGOTIABLE EVIDENCE RULES:\n1. Treat every claim in APPROVED TOPIC RECORD as an unverified hypothesis unless independently supported in FETCHED EVIDENCE.\n2. A headline alone is not evidence. Use only facts explicitly present in FETCHED EVIDENCE.\n3. Every factual assertion, number, percentage, salary figure, trend/study/historical/causal claim in the dossier AND script must end with [S#].\n4. Never manufacture precision or generalize an anecdote, opinion, example or single-company observation.\n5. Clearly label interpretations as interpretations. Do not mind-read employees, managers or HR.\n6. Unsupported points belong under What we cannot claim yet and must be omitted as facts from narration.\n7. For surveys, state population/sample/geography/date when the source provides them. Do not imply global representativeness.\n8. Use resolved publisher URLs in Source ledger.\n\nUse exactly:\n# Research + Script Gate\n## Approved topic\n## Core thesis\n## Claim-evidence ledger\nEach factual claim: **Claim:** ... | **Evidence:** concise paraphrase of exactly what source establishes | **Source:** [S#] | **Confidence:** High/Medium. Low-confidence claims are excluded.\n## What we can responsibly say\n## What we cannot claim yet\n## Competing interpretations\n## Employee perspective\n## Manager perspective\n## Peer/team perspective\n## HR/people-system perspective\n## Organisation/leadership perspective\n## Source ledger\n## Draft script\nNatural 7–10 minute script: recognisable moment → tension → multiple plausible interpretations → signals that strengthen/weaken each → practical observe/ask/verify/act framework. Every research-derived factual claim carries [S#]. No unsupported statistics or pseudo-precision.\n## Editor checklist\n- Claims needing additional verification\n- Evidence limitations\n- Tone/clickbait risks\n- Suggested title\n- Thumbnail text (max 5 words)\nReturn Markdown only.'''
     md=re.sub(r'^```(?:markdown)?\s*|\s*```$','',gemini(prompt),flags=re.I|re.S).strip()
     if '## Draft script' not in md: raise RuntimeError('RESEARCH QUALITY GATE FAILED: model omitted Draft script section')
-    script=md.split('## Draft script',1)[1].split('## Editor checklist',1)[0]
-    bad=[]
+    script=md.split('## Draft script',1)[1].split('## Editor checklist',1)[0]; bad=[]
     for line in script.splitlines():
-        # Ignore headings/timecodes/visual directions; guard prose containing numeric factual content.
         prose=line.strip()
         if not prose or prose.startswith(('#','**[VISUAL','[VISUAL','```')): continue
         if re.search(r'(?<!\w)(?:\d+(?:\.\d+)?%|\$\s*\d+|₹\s*\d+|\d+\s+(?:percent|per cent|employees|workers|managers|people|hours|days|years))',prose,re.I) and not re.search(r'\[S\d+\]',prose): bad.append(prose)
