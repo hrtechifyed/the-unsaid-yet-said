@@ -1,8 +1,12 @@
 name: Research and Script
 
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Approved Topic issue number'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,7 +14,6 @@ permissions:
 
 jobs:
   build-research-script:
-    if: startsWith(github.event.issue.title, 'Approved Topic — ')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -25,4 +28,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.6-flash' }}
+          SOURCE_ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: python scripts/research_script_engine.py
