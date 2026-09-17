@@ -7,6 +7,8 @@ on:
         description: 'Approved Topic issue number'
         required: true
         type: string
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -14,6 +16,7 @@ permissions:
 
 jobs:
   build-research-script:
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.event.issue.title, 'Approved Topic — ') && github.event.comment.body == '/run-research')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
