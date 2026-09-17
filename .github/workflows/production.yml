@@ -1,8 +1,12 @@
 name: Production Pipeline
 
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Script Approved issue number'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,25 +14,21 @@ permissions:
 
 jobs:
   production-gate:
-    if: startsWith(github.event.issue.title, 'Script Approved — ')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Install production dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu-core
           python -m pip install --upgrade pip
           python -m pip install edge-tts
-
       - name: Render and upload PRIVATE preview
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,13 +36,13 @@ jobs:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           YOUTUBE_EXPECTED_HANDLE: '@TheUnsaidYetSaid'
+          SOURCE_ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: python scripts/production_engine.py
-
       - name: Preserve production package for Gate 3 review
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: production-package-${{ github.event.issue.number }}
+          name: production-package-${{ inputs.issue_number }}
           path: /tmp/production/
           if-no-files-found: warn
           retention-days: 7
