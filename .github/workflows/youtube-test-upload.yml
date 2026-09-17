@@ -12,6 +12,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - name: Create harmless test video
         run: |
           ffmpeg -f lavfi -i color=c=black:s=1280x720:d=4 -f lavfi -i anullsrc=r=44100:cl=stereo \
