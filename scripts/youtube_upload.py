@@ -3,6 +3,7 @@ import argparse, json, os, sys
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 TOKEN_URL='https://oauth2.googleapis.com/token'
 API='https://www.googleapis.com/youtube/v3'
@@ -10,13 +11,39 @@ UPLOAD='https://www.googleapis.com/upload/youtube/v3/videos'
 EXPECTED_HANDLE=os.environ.get('YOUTUBE_EXPECTED_HANDLE','@TheUnsaidYetSaid').lower()
 
 
+def _safe_google_error(exc):
+    try:
+        raw=exc.read().decode('utf-8','replace')
+        payload=json.loads(raw)
+        err=payload.get('error',{})
+        message=err.get('message',str(exc))
+        reasons=[]
+        for item in err.get('errors',[]) or []:
+            reason=item.get('reason')
+            if reason and reason not in reasons:
+                reasons.append(reason)
+        status=err.get('status')
+        parts=[f'Google API HTTP {exc.code}']
+        if status: parts.append(f'status={status}')
+        if reasons: parts.append('reason='+','.join(reasons))
+        parts.append('message='+message)
+        return ' | '.join(parts)
+    except Exception:
+        return f'Google API HTTP {getattr(exc,"code","unknown")}: {getattr(exc,"reason",str(exc))}'
+
+
 def request_json(url, method='GET', data=None, headers=None):
     body=None
     if data is not None:
         body = urlencode(data).encode() if isinstance(data,dict) else data
     req=Request(url,data=body,method=method,headers=headers or {})
-    with urlopen(req,timeout=120) as r:
-        return json.loads(r.read().decode())
+    try:
+        with urlopen(req,timeout=120) as r:
+            return json.loads(r.read().decode())
+    except HTTPError as exc:
+        # Print only Google's structured reason/message. Never print request headers,
+        # access tokens, refresh tokens, client secrets, or authorization codes.
+        raise RuntimeError(_safe_google_error(exc)) from None
 
 
 def access_token():
@@ -26,12 +53,17 @@ def access_token():
     out=request_json(TOKEN_URL,'POST',{
         'client_id':vals['YOUTUBE_CLIENT_ID'],'client_secret':vals['YOUTUBE_CLIENT_SECRET'],
         'refresh_token':vals['YOUTUBE_REFRESH_TOKEN'],'grant_type':'refresh_token'})
+    if 'access_token' not in out:
+        raise RuntimeError('OAuth token refresh returned no access token')
     return out['access_token']
 
 
 def verify_channel(token):
     url=API+'/channels?'+urlencode({'part':'snippet','mine':'true'})
-    out=request_json(url,headers={'Authorization':'Bearer '+token})
+    try:
+        out=request_json(url,headers={'Authorization':'Bearer '+token})
+    except RuntimeError as exc:
+        raise RuntimeError('CHANNEL VERIFICATION FAILED: '+str(exc)) from None
     items=out.get('items',[])
     if len(items)!=1: raise RuntimeError(f'Expected exactly one authorized channel, got {len(items)}')
     ch=items[0]; handle=(ch.get('snippet',{}).get('customUrl') or '').lower()
@@ -50,7 +82,10 @@ def upload(token,path,title,description,privacy):
           f'\r\n--{boundary}\r\nContent-Type: video/mp4\r\n\r\n'.encode()+video+
           f'\r\n--{boundary}--\r\n'.encode())
     url=UPLOAD+'?'+urlencode({'part':'snippet,status','uploadType':'multipart','notifySubscribers':'false'})
-    return request_json(url,'POST',body,{'Authorization':'Bearer '+token,'Content-Type':f'multipart/related; boundary={boundary}'})
+    try:
+        return request_json(url,'POST',body,{'Authorization':'Bearer '+token,'Content-Type':f'multipart/related; boundary={boundary}'})
+    except RuntimeError as exc:
+        raise RuntimeError('VIDEO UPLOAD FAILED: '+str(exc)) from None
 
 
 def main():
