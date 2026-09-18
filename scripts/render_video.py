@@ -9,7 +9,8 @@ FONT_REG = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
 FONT_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
 W, H = 1920, 1080
 MIN_SPOKEN_WORDS = 900
-MIN_DURATION_SECONDS = 360
+MIN_DURATION_SECONDS = 420
+MAX_DURATION_SECONDS = 600
 
 BG = '#16110F'
 PANEL = '#241A17'
@@ -293,12 +294,14 @@ def main():
         raise RuntimeError(f'QUALITY GATE FAILED: approved narration has {wc} spoken words; minimum is {MIN_SPOKEN_WORDS}.')
 
     (OUT/'narration.txt').write_text(narration)
-    run('edge-tts','--voice','en-IN-PrabhatNeural','--rate=-3%','--file',str(OUT/'narration.txt'),
+    run('edge-tts','--voice','en-IN-PrabhatNeural','--rate=+12%','--file',str(OUT/'narration.txt'),
         '--write-media',str(OUT/'narration.mp3'),'--write-subtitles',str(OUT/'captions.srt'),retries=3)
 
     duration = ffprobe_duration(OUT/'narration.mp3')
     if duration < MIN_DURATION_SECONDS:
         raise RuntimeError(f'QUALITY GATE FAILED: narration is {duration:.1f}s; minimum is {MIN_DURATION_SECONDS}s.')
+    if duration > MAX_DURATION_SECONDS:
+        raise RuntimeError(f'QUALITY GATE FAILED: narration is {duration:.1f}s; maximum is {MAX_DURATION_SECONDS}s for the 7–10 minute target.')
 
     scenes = chunk_blocks(raw, max_words=30)
     if len(scenes) < 12:
@@ -307,7 +310,7 @@ def main():
     counts = [max(1, len(words(s['text']))) for s in scenes]
     total_words = sum(counts)
     durations = [duration * c / total_words for c in counts]
-    durations = [max(5.0, min(16.0, d)) for d in durations]
+    durations = [max(5.0, min(12.0, d)) for d in durations]
     scale = duration / sum(durations)
     durations = [d * scale for d in durations]
 
@@ -325,6 +328,7 @@ def main():
     vf = (
         f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
         f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,"
+        "zoompan=z='min(zoom+0.00008,1.025)':d=1:s=1920x1080:fps=30,"
         f"subtitles={OUT/'captions.srt'}:"
         "force_style='FontName=DejaVu Sans,FontSize=21,PrimaryColour=&H00FFFFFF,"
         "OutlineColour=&H00100D0B,BorderStyle=3,BackColour=&H880E0A09,Outline=1,Shadow=0,MarginV=42,Alignment=2'"
