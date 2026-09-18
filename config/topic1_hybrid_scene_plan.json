@@ -1,0 +1,83 @@
+{
+  "topic": "When Employees Say No to Promotion: Decoding the Shift Away from People Management",
+  "source_issue": 7,
+  "format": "hybrid",
+  "target_runtime_seconds": 534,
+  "narration": {
+    "voice": "Anurag cloned voice",
+    "continuous_full_episode": true
+  },
+  "sections": [
+    {
+      "time": "00:00-00:25",
+      "mode": "avatar",
+      "content": "Opening hook: high performer offered the next step, then says no. Challenge the automatic assumptions about ambition, disengagement and responsibility.",
+      "visual_notes": "Avatar in HRTechify T-shirt. Tight framing. Minimal background motion. HRTechify watermark remains visible."
+    },
+    {
+      "time": "00:25-00:50",
+      "mode": "visual_storytelling",
+      "content": "Signal is not motive. Introduce the 38% versus 62% Visier finding.",
+      "visual_notes": "Promotion notification animation; SIGNAL ≠ MOTIVE; animated 38/62 split."
+    },
+    {
+      "time": "00:50-02:05",
+      "mode": "visual_storytelling",
+      "content": "Workload-to-reward interpretation: stress, hours, compensation, benefits and dry promotion risk.",
+      "visual_notes": "Calendar overload, meeting blocks, 40%/39% deterrent cards, 71%/45% incentive cards, title-versus-reward comparison."
+    },
+    {
+      "time": "02:05-03:20",
+      "mode": "visual_storytelling",
+      "content": "Craft versus people management. Explore expert growth, technical authority and credible individual-contributor paths.",
+      "visual_notes": "Engineer/designer/analyst deep-work scenes; split path graphic: Manager Track vs Expert Track; question card: Is management the only way up?"
+    },
+    {
+      "time": "03:20-04:20",
+      "mode": "visual_storytelling",
+      "content": "Personal capacity and multidimensional ambition using the 67%, 64%, 58% and 9% findings.",
+      "visual_notes": "Animated priority bars; family, health, travel, career icons; emphasize population-specific caveat."
+    },
+    {
+      "time": "04:20-05:05",
+      "mode": "visual_storytelling",
+      "content": "Context rejection: not necessarily rejecting management, but this role, team, timing, workload or employer. Show the 36% different-organization finding.",
+      "visual_notes": "Role cards changing context; 36% callout; phrase: NO can mean NOT THIS VERSION."
+    },
+    {
+      "time": "05:05-06:05",
+      "mode": "visual_storytelling",
+      "content": "Manager response: do not sell harder; diagnose the signal through curiosity and questions.",
+      "visual_notes": "Manager/employee conversation; question prompts appearing one by one; card: Don't defend the offer. Diagnose the signal."
+    },
+    {
+      "time": "06:05-06:55",
+      "mode": "visual_storytelling",
+      "content": "HR and leadership implications: career architecture, senior IC paths, manager support and the India manager-engagement context.",
+      "visual_notes": "Career architecture diagram; 39% to 30% trend animation with explicit 2024 and 2025 labels; no causal claim."
+    },
+    {
+      "time": "06:55-08:23",
+      "mode": "visual_storytelling",
+      "content": "Four-step response framework: OBSERVE → ASK → VERIFY → ACT. End with the broader question about what the decision reveals about the person, role and definition of progress.",
+      "visual_notes": "Full-screen four-step framework, then return to promotion screen split into Manager Track and Expert Track."
+    },
+    {
+      "time": "08:23-08:54",
+      "mode": "avatar",
+      "content": "Closing synthesis: ambition may not look the way the organization expected; interested in the next step, just not this one. Channel signature.",
+      "visual_notes": "Avatar returns. Calm direct delivery. End card: The Unsaid, Yet Said / What isn't said often says the most. / Powered by HRTechify."
+    }
+  ],
+  "hard_rules": [
+    "Use Anurag's cloned voice from first word to last word.",
+    "Avatar appears only in the opening and closing.",
+    "Use the exact approved HRTechify logo asset; never recreate or approximate it.",
+    "Keep a subtle HRTechify watermark visible throughout.",
+    "No Siemens name, logo, imagery, colors or references anywhere.",
+    "All quantitative claims must remain tied to the approved sources in issue #7.",
+    "Interpretations must be framed as possibilities, not inferred motives.",
+    "Scene changes should generally occur every 5-12 seconds in the visual middle.",
+    "Final output remains PRIVATE until Gate 3 approval."
+  ]
+}
