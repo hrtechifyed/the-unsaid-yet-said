@@ -1,0 +1,60 @@
+{
+  "template_name": "The Unsaid Yet Said - Permanent Hybrid Episode",
+  "version": 1,
+  "duration": {
+    "target_seconds": 510,
+    "minimum_seconds": 420,
+    "maximum_seconds": 600
+  },
+  "structure": [
+    {
+      "section": "avatar_opening",
+      "start_seconds": 0,
+      "end_seconds": 25,
+      "duration_seconds": 25,
+      "visual": "HRTechify-branded avatar on screen",
+      "audio": "Anurag cloned voice",
+      "purpose": "Hook, tension, core question. No channel housekeeping before the hook."
+    },
+    {
+      "section": "visual_storytelling",
+      "start_seconds": 25,
+      "end_seconds": 480,
+      "duration_seconds": 455,
+      "visual": "B-roll, workplace illustrations, animated statistics, charts, frameworks, key phrases and scene changes",
+      "audio": "Anurag cloned voice continuously",
+      "purpose": "Evidence-led narrative and explanation. Avatar is off screen."
+    },
+    {
+      "section": "avatar_closing",
+      "start_seconds": 480,
+      "end_seconds": 510,
+      "duration_seconds": 30,
+      "visual": "HRTechify-branded avatar returns",
+      "audio": "Anurag cloned voice",
+      "purpose": "Synthesis, final thought and channel signature."
+    }
+  ],
+  "adaptive_rule": {
+    "description": "For episodes between 7 and 10 minutes, keep the opening at 25 seconds and closing at 30 seconds; expand or contract only the visual-storytelling middle.",
+    "opening_seconds": 25,
+    "closing_seconds": 30
+  },
+  "production_rules": {
+    "narration_voice": "Anurag cloned voice for the full episode",
+    "background_music": "Optional and always secondary to narration",
+    "avatar_visibility": "Opening and closing only in hybrid mode",
+    "hrtechify_logo": "Persistent subtle watermark throughout; exact approved HRTechify logo asset only",
+    "avatar_branding": "Exact approved HRTechify logo on T-shirt",
+    "captions": "Burned-in or selectable captions required",
+    "scene_change_target_seconds": "5-12",
+    "no_siemens_branding": true,
+    "publish_default": "private"
+  },
+  "pre_production_gate": {
+    "required": true,
+    "question": "Faceless or Face/Hybrid?",
+    "choices": ["faceless", "hybrid"],
+    "hybrid_uses_this_template": true
+  }
+}
